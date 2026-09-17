@@ -20,34 +20,61 @@ const easeOutBack = (x) => 1 + 2.7 * Math.pow(x - 1, 3) + 1.7 * Math.pow(x - 1, 
 const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
 
 /**
- * A tiny equirectangular environment painted into a canvas: a dark room with
- * two warm highlights. Cheaper than loading an HDRI and it gives the copper
- * and the pearls something to reflect.
+ * A studio painted into an equirectangular canvas: a dark room lit by two large
+ * softboxes, with a warm bounce low and a bright band at the horizon.
+ *
+ * Structure is the whole point. A smooth gradient gives metal and glass nothing
+ * to reflect, which is exactly what makes rendered objects read as plastic —
+ * they need distinct bright shapes with soft edges to catch.
  */
 function makeEnvironment(renderer) {
+  const W = 1024;
+  const H = 512;
   const canvas = document.createElement("canvas");
-  canvas.width = 512;
-  canvas.height = 256;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext("2d");
 
-  const base = ctx.createLinearGradient(0, 0, 0, 256);
-  base.addColorStop(0, "#241a13");
-  base.addColorStop(0.55, "#0d0a08");
-  base.addColorStop(1, "#050404");
+  const base = ctx.createLinearGradient(0, 0, 0, H);
+  base.addColorStop(0, "#2a1e16");
+  base.addColorStop(0.42, "#120d0a");
+  base.addColorStop(0.5, "#1d1611");
+  base.addColorStop(0.58, "#0a0706");
+  base.addColorStop(1, "#040303");
   ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 512, 256);
+  ctx.fillRect(0, 0, W, H);
 
-  const blob = (x, y, r, color) => {
-    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, color);
+  /** A softbox: a bright rounded rectangle with a wide falloff around it. */
+  const softbox = (cx, cy, w, h, color, glow) => {
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 1.6);
+    g.addColorStop(0, glow);
     g.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = g;
-    ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    ctx.fillRect(cx - w * 2, cy - h * 2, w * 4, h * 4);
+
+    ctx.save();
+    ctx.filter = "blur(14px)";
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(cx - w / 2, cy - h / 2, w, h, Math.min(w, h) * 0.3);
+    ctx.fill();
+    ctx.restore();
   };
 
-  blob(150, 70, 110, "rgba(255, 216, 170, 0.95)");
-  blob(370, 96, 80, "rgba(201, 121, 63, 0.7)");
-  blob(60, 190, 120, "rgba(70, 50, 38, 0.6)");
+  // Key light, upper left — the big warm one the copper picks up.
+  softbox(210, 130, 260, 150, "rgba(255, 238, 214, 1)", "rgba(255, 214, 168, 0.5)");
+  // Cooler rim from the opposite side, to separate the glass from the dark.
+  softbox(720, 155, 120, 210, "rgba(226, 232, 240, 0.92)", "rgba(180, 200, 220, 0.3)");
+  // Low warm bounce, so the underside of the tin is not dead black.
+  softbox(460, 372, 340, 90, "rgba(201, 121, 63, 0.5)", "rgba(160, 90, 45, 0.28)");
+
+  // A thin bright horizon reads as a tabletop reflection on the flute stems.
+  const horizon = ctx.createLinearGradient(0, H * 0.48, 0, H * 0.53);
+  horizon.addColorStop(0, "rgba(0,0,0,0)");
+  horizon.addColorStop(0.5, "rgba(255, 226, 190, 0.32)");
+  horizon.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = horizon;
+  ctx.fillRect(0, H * 0.46, W, H * 0.09);
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.mapping = THREE.EquirectangularReflectionMapping;
@@ -182,11 +209,11 @@ function makeFlute(envMap) {
     roughness: 0.02,
     metalness: 0,
     transparent: true,
-    opacity: 0.13,
+    opacity: 0.1,
     clearcoat: 1,
     clearcoatRoughness: 0.02,
     envMap,
-    envMapIntensity: 2.4,
+    envMapIntensity: 1.5,
     side: THREE.DoubleSide,
     depthWrite: false,
   });
@@ -206,10 +233,10 @@ function makeFlute(envMap) {
       color: 0xdca35c,
       roughness: 0.08,
       transparent: true,
-      opacity: 0.62,
-      emissive: 0x1d0f04,
+      opacity: 0.55,
+      emissive: 0x0d0602,
       envMap,
-      envMapIntensity: 2.2,
+      envMapIntensity: 1.2,
     })
   );
   group.add(liquid);
@@ -253,7 +280,7 @@ function makeContactShadow() {
  * Builds the invitation scene. The returned `root` is placed by the caller
  * (WebXR hit-test or the gyro fallback); `play()` restarts the timeline.
  */
-export function createExperience(renderer) {
+export function createExperience(renderer, { shadows = false } = {}) {
   const envMap = makeEnvironment(renderer);
   const sprite = makeSpriteTexture();
 
@@ -274,17 +301,17 @@ export function createExperience(renderer) {
   const copperMat = new THREE.MeshStandardMaterial({
     color: COPPER,
     metalness: 1,
-    roughness: 0.28,
+    roughness: 0.3,
     envMap,
-    envMapIntensity: 1.5,
+    envMapIntensity: 1,
   });
 
   const darkMetalMat = new THREE.MeshStandardMaterial({
-    color: 0x2b2420,
+    color: 0x221c18,
     metalness: 0.95,
-    roughness: 0.34,
+    roughness: 0.36,
     envMap,
-    envMapIntensity: 1.6,
+    envMapIntensity: 0.95,
   });
 
   const tin = new THREE.Group();
@@ -334,13 +361,13 @@ export function createExperience(renderer) {
   /* --- pearls ---------------------------------------------------- */
 
   const pearlMat = new THREE.MeshPhysicalMaterial({
-    color: 0x1a1410,
-    roughness: 0.11,
+    color: 0x120d0a,
+    roughness: 0.13,
     metalness: 0.15,
     clearcoat: 1,
     clearcoatRoughness: 0.04,
     envMap,
-    envMapIntensity: 3,
+    envMapIntensity: 1.35,
   });
 
   const pearls = new THREE.InstancedMesh(
@@ -456,11 +483,39 @@ export function createExperience(renderer) {
 
   root.add(new THREE.HemisphereLight(0xffd9b0, 0x0a0806, 1.1));
 
-  const key = new THREE.DirectionalLight(0xffe2be, 2.3);
+  const key = new THREE.DirectionalLight(0xffe2be, 1.6);
   key.position.set(0.3, 0.6, 0.35);
   root.add(key);
 
-  const rimLight = new THREE.PointLight(0xc9793f, 1.6, 1.2, 2);
+  /* A cast shadow is what makes an object sit in a scene rather than hover
+     over it. It costs a depth pass, so the phone gets the painted disc and the
+     offline render gets the real thing. */
+  if (shadows) {
+    key.castShadow = true;
+    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.radius = 4;
+    key.shadow.bias = -0.0008;
+    const cam = key.shadow.camera;
+    cam.near = 0.01;
+    cam.far = 2;
+    cam.left = cam.bottom = -0.4;
+    cam.right = cam.top = 0.4;
+    cam.updateProjectionMatrix();
+
+    [body, rim, base, lidTop, lidSkirt, pearls].forEach((m) => (m.castShadow = true));
+    flutes.forEach((f) => f.traverse((o) => (o.castShadow = true)));
+
+    const catcher = new THREE.Mesh(
+      new THREE.PlaneGeometry(1.4, 1.4),
+      new THREE.ShadowMaterial({ opacity: 0.55 })
+    );
+    catcher.rotation.x = -Math.PI / 2;
+    catcher.receiveShadow = true;
+    spin.add(catcher);
+    shadow.material.opacity = 0; // the painted disc would double up
+  }
+
+  const rimLight = new THREE.PointLight(0xc9793f, 0.7, 1.2, 2);
   rimLight.position.set(-0.25, 0.22, -0.28);
   root.add(rimLight);
 
@@ -516,7 +571,7 @@ export function createExperience(renderer) {
     const tinIn = easeOutBack(span(t, TL.tinIn[0], TL.tinIn[1]));
     tin.scale.setScalar(Math.max(0.0001, tinIn));
     tin.position.y = (1 - easeOutCubic(span(t, TL.tinIn[0], TL.tinIn[1]))) * -0.05;
-    shadow.material.opacity = easeOutCubic(span(t, TL.tinIn[0], TL.tinIn[1])) * 0.9;
+    shadow.material.opacity = shadows ? 0 : easeOutCubic(span(t, TL.tinIn[0], TL.tinIn[1])) * 0.9;
 
     /* lid lifts, tilts and dissolves */
     const lidT = span(t, TL.lidOff[0], TL.lidOff[1]);
@@ -585,7 +640,7 @@ export function createExperience(renderer) {
       spin.rotation.y += delta * 0.16 * Math.min(1, (t - TL.tinIn[1]) / 1.5);
     }
 
-    rimLight.intensity = 1.2 + Math.sin(t * 1.1) * 0.35;
+    rimLight.intensity = 0.6 + Math.sin(t * 1.1) * 0.15;
 
     if (!completed && t >= TL.done) {
       completed = true;
