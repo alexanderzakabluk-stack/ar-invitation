@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#000000" />
+<title>You are invited — An Evening of Caviar</title>
+<meta name="description" content="An evening of caviar, champagne and exceptional company. 11 December 2026, Ringön, Göteborg." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;500&family=Jost:wght@300;400;500&display=swap" rel="stylesheet" />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0908'/%3E%3Ccircle cx='16' cy='18' r='9' fill='none' stroke='%23c9793f' stroke-width='2'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./styles.css" />
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+  <video id="camera-feed" playsinline muted autoplay></video>
+  <canvas id="gl"></canvas>
+
+  <main id="ui">
+    <!-- 1. Cover -->
+    <section class="screen is-active" data-screen="cover">
+      <div class="rule"></div>
+      <p class="eyebrow">You are invited</p>
+      <h1 class="display">Caviar</h1>
+      <p class="lede">An evening of caviar, champagne<br />and exceptional company.</p>
+      <div class="rule"></div>
+      <p class="meta">11 December 2026 &nbsp;·&nbsp; 18:00<br />Ringön &nbsp;·&nbsp; Göteborg</p>
+      <button class="btn" data-action="start">Open invitation</button>
+      <p class="hint" data-role="cover-hint">Uses your camera · nothing is recorded</p>
+    </section>
+
+    <!-- 2. Permission / loading -->
+    <section class="screen" data-screen="prepare">
+      <div class="spinner"></div>
+      <p class="lede" data-role="prepare-text">Preparing the table…</p>
+    </section>
+
+    <!-- 3. Placement coaching -->
+    <section class="screen is-passthrough" data-screen="place">
+      <div class="coach">
+        <div class="coach-icon"></div>
+        <p class="coach-text" data-role="place-text">Point at a table or the printed card</p>
+        <button class="btn btn-ghost" data-action="place">Place here</button>
+      </div>
+    </section>
+
+    <!-- 4. AR running -->
+    <section class="screen is-passthrough" data-screen="scene">
+      <button class="chip" data-action="finish">Details</button>
+    </section>
+
+    <!-- 5. Final details -->
+    <section class="screen" data-screen="details">
+      <div class="rule"></div>
+      <p class="eyebrow">You are invited</p>
+      <h2 class="display sm">Caviar</h2>
+      <dl class="facts">
+        <div><dt>Date</dt><dd>11 December 2026</dd></div>
+        <div><dt>Time</dt><dd>18:00</dd></div>
+        <div><dt>Location</dt><dd>Ringön Vinkällare<br />Ringön, Göteborg</dd></div>
+        <div><dt>Dress code</dt><dd>Cocktail attire</dd></div>
+      </dl>
+      <div class="rule"></div>
+      <p class="eyebrow">Kindly RSVP to</p>
+      <p class="name">John</p>
+      <p class="meta">by 20 November</p>
+      <div class="actions">
+        <a class="btn" href="mailto:john.johansson@devies.se?subject=RSVP%20%E2%80%94%20An%20Evening%20of%20Caviar">RSVP by email</a>
+        <a class="btn btn-ghost" href="tel:+46701234567">+46 70 123 45 67</a>
+        <a class="btn btn-ghost" data-action="calendar" href="#">Add to calendar</a>
+      </div>
+      <button class="link" data-action="replay">Replay the experience</button>
+    </section>
+
+    <!-- 6. Error -->
+    <section class="screen" data-screen="error">
+      <div class="rule"></div>
+      <p class="eyebrow">Something went wrong</p>
+      <p class="lede" data-role="error-text"></p>
+      <button class="btn" data-action="retry">Try again</button>
+      <button class="link" data-action="skip">Open invitation without AR</button>
+    </section>
+  </main>
+
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
