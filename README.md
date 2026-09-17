@@ -10,6 +10,13 @@ No app, no install, no account, no backend. Static files only.
 printed card → QR → this page → camera → 3D reveal → RSVP
 ```
 
+**Live:** https://alexanderzakabluk-stack.github.io/ar-invitation/
+
+`assets/qr.png` (screen) and `assets/qr.svg` (print) encode that URL. Point a
+phone camera at either and the operating system offers the link — that is the
+whole mechanism, and it is why the URL has to be fixed before anything goes to
+print.
+
 ## The one constraint that shapes everything
 
 **iOS does not support WebXR — in any browser.** Apple requires every iOS
@@ -84,7 +91,27 @@ Date, location, RSVP contact and the `.ics` file are in three places:
 - `src/scene.js` — `makeCardTexture()`, the floating card
 - `src/ui.js` — the `EVENT` constant used for the calendar file
 
+## Publishing
+
+The repo is served by GitHub Pages from `main`, so pushing to `main` is the
+deploy. The URL is permanent, which matters: a QR printed on paper cannot be
+changed afterwards.
+
+If the URL ever has to move, regenerate both QR files:
+
+```bash
+URL="https://…"
+npx qrcode -o assets/qr.png -t png -w 1200 -m 3 -e H "$URL"
+npx qrcode -o assets/qr.svg -t svg -m 3 -e H "$URL"
+```
+
+Error-correction level `H` is deliberate — it survives the code being printed
+small, on dark stock, or partly obscured by a foil or emboss.
+
 ## Still to do
 
-- Print the QR once the production URL is fixed
+- Test the passthrough path on a real iPhone (the open question is whether
+  gyroscope-only tracking holds the object convincingly enough)
+- Replace the placeholder RSVP name, phone and email with the real ones
+- Design the printed card back around the QR
 - Optional: per-guest URLs (`/invite/07`) so the card shows the guest's number
