@@ -50,3 +50,20 @@ export async function requestMotionPermission() {
     return false;
   }
 }
+
+/**
+ * Ask for the camera before handing control to MindAR.
+ *
+ * MindAR rejects with `undefined` when getUserMedia fails, which leaves no way
+ * to tell "the guest tapped Don't Allow" apart from a genuine failure. Asking
+ * first means the guest gets an accurate message, and it puts the permission
+ * prompt at a moment we choose rather than mid-initialisation.
+ */
+export async function ensureCamera() {
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" } },
+    audio: false,
+  });
+  // MindAR opens its own stream; this one has done its job.
+  stream.getTracks().forEach((track) => track.stop());
+}

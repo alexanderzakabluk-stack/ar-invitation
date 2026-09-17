@@ -17,23 +17,42 @@ phone camera at either and the operating system offers the link — that is the
 whole mechanism, and it is why the URL has to be fixed before anything goes to
 print.
 
-## The one constraint that shapes everything
+## How the card anchors the scene
 
-**iOS does not support WebXR — in any browser.** Apple requires every iOS
-browser to use WebKit, so Chrome, Firefox and Edge on an iPhone are Safari
-underneath and have exactly the same gap. There is no flag or workaround.
+The card does two jobs. Its QR opens the page, and its artwork is the tracking
+target: once the camera is running, the scene locks onto the card itself rather
+than appearing wherever the guest taps.
 
-So the experience ships two paths and picks one at runtime:
+Tracking runs on [MindAR](https://github.com/hiukim/mind-ar-js), which does its
+own image tracking on a plain `getUserMedia` feed. That matters because **iOS
+has no WebXR in any browser** — Apple requires every iOS browser to use WebKit,
+so Chrome and Firefox on an iPhone have the same gap as Safari. MindAR sidesteps
+that entirely and gives every phone the same experience.
 
-| Device | Path | What the guest gets |
-| --- | --- | --- |
-| Android / Chrome | **WebXR** (`immersive-ar` + hit-test) | Real plane detection, a reticle, world-locked object |
-| iPhone / iPad (any browser) | **Passthrough** | Camera feed + gyroscope, scene placed on tap in front of the guest |
-| In-app browser (Instagram, WhatsApp…) | — | Detected, with a prompt to open in a real browser |
+A fallback appears after 15 seconds of not finding the card: the guest can place
+the scene on a table instead, using the gyroscope. That covers someone looking
+at a screenshot, or who left the card at home.
 
-The passthrough path tracks rotation but not translation: walking around the
-object does not orbit it. On a phone held at a table that difference is barely
-noticeable, and it is the only way to reach iPhone guests from the browser.
+### The printed design has to earn its tracking
+
+Image tracking needs high-contrast detail to lock onto. **A mostly-black card
+with thin type tracks badly** — there is almost nothing for the algorithm to
+hold. The caviar photograph is what makes the cover work, so whatever goes to
+print has to keep a large, textured, high-contrast area.
+
+`assets/target.png` is the reference card, and `assets/targets.mind` is the
+compiled tracking data. They must always describe the same artwork.
+
+### Recompiling the target after a design change
+
+```bash
+npx serve -l 5173 .          # tools/compile.html needs to be served, not opened
+node tools/receive.mjs       # writes assets/targets.mind
+```
+
+Then open `http://localhost:5173/tools/compile.html`, wait for "done", and POST
+the result to the receiver. `tools/card.html` regenerates the reference card
+itself if the layout changes.
 
 ## Running it
 
@@ -51,12 +70,17 @@ The camera requires a secure context, so testing on a phone means deploying
 ## Layout
 
 ```
-index.html      all six UI screens (cover → prepare → place → scene → details → error)
-styles.css      the black / copper invitation styling
-src/main.js     renderer, both AR paths, the flow between screens
-src/scene.js    the 3D content and its reveal timeline
-src/env.js      capability detection (the iOS / WebXR logic above)
-src/ui.js       screen switching, the WebAudio chime, the .ics file
+index.html          all six UI screens (cover → prepare → scan → scene → details → error)
+styles.css          the black / copper invitation styling
+src/main.js         the flow between screens, and the table-placement fallback
+src/ar-image.js     MindAR image tracking — the primary path
+src/scene.js        the 3D content and its reveal timeline
+src/env.js          capability detection and permission requests
+src/ui.js           screen switching, the WebAudio chime, the .ics file
+src/three-compat.js shim so mind-ar runs against current three
+tools/card.html     generates the reference card artwork
+tools/compile.html  compiles that artwork into assets/targets.mind
+tools/receive.mjs   catches the compiled file and writes it to disk
 ```
 
 Everything in the 3D scene is generated in code — the tin, the pearls, the
@@ -110,8 +134,7 @@ small, on dark stock, or partly obscured by a foil or emboss.
 
 ## Still to do
 
-- Test the passthrough path on a real iPhone (the open question is whether
-  gyroscope-only tracking holds the object convincingly enough)
+- Test tracking on a real iPhone against the printed card
 - Replace the placeholder RSVP name, phone and email with the real ones
-- Design the printed card back around the QR
+- Replace the reference card with the real artwork, then recompile the target
 - Optional: per-guest URLs (`/invite/07`) so the card shows the guest's number

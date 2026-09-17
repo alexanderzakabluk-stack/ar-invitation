@@ -22,6 +22,25 @@ html, body {
   overscroll-behavior: none;
 }
 
+#mindar {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  transition: opacity 700ms ease;
+}
+#mindar.is-live { opacity: 1; }
+/* MindAR injects its own video and canvas here and sizes them itself; these
+   rules only guarantee they fill the viewport on phones with a notch. */
+#mindar video,
+#mindar canvas {
+  position: absolute !important;
+  inset: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+}
+
 #camera-feed,
 #gl {
   position: fixed;
@@ -243,30 +262,37 @@ html, body {
 
 .coach {
   display: flex;
+  position: relative;
+  z-index: 1;
   flex-direction: column;
   align-items: center;
   gap: 18px;
   margin-bottom: calc(44px + var(--safe-bottom));
 }
 
-.coach-icon {
-  width: 64px;
-  height: 64px;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  position: relative;
-  animation: pulse 2.4s ease-in-out infinite;
+.coach-frame {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  width: min(62vw, 300px);
+  aspect-ratio: 105 / 148;
+  transform: translate(-50%, -58%);
+  pointer-events: none;
+  animation: pulse 2.6s ease-in-out infinite;
 }
-.coach-icon::after {
+.coach-frame::before,
+.coach-frame::after {
   content: "";
   position: absolute;
-  inset: 22px;
-  border: 1px solid var(--copper);
-  border-radius: 50%;
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--copper);
 }
+.coach-frame::before { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.coach-frame::after { bottom: 0; right: 0; border-left: 0; border-top: 0; }
 @keyframes pulse {
-  0%, 100% { transform: scale(1); opacity: 0.7; }
-  50% { transform: scale(1.12); opacity: 1; }
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
 }
 
 .coach-text {
@@ -291,3 +317,5 @@ html, body {
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+
+[hidden] { display: none !important; }

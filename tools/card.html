@@ -1,0 +1,87 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400&family=Jost:wght@300;400&display=swap" rel="stylesheet" />
+<style>
+  * { margin: 0; box-sizing: border-box; }
+  body { background: #fff; }
+  /* A6 at 300 dpi */
+  #card { position: relative; width: 1240px; height: 1748px; background: #070605; overflow: hidden; }
+  #pearls { position: absolute; inset: 0; }
+  .frame { position: absolute; inset: 34px; border: 3px solid rgba(201,121,63,0.85); }
+  .content { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; padding: 120px 90px; }
+  h1 {
+    font: 400 200px/1 "Playfair Display", Georgia, serif;
+    letter-spacing: 0.06em; text-indent: 0.06em; text-transform: uppercase;
+    background: linear-gradient(175deg, #fbdcb8 0%, #c9793f 48%, #7d4520 100%);
+    -webkit-background-clip: text; color: transparent;
+  }
+  .rule { width: 130px; height: 3px; background: rgba(201,121,63,0.8); margin: 44px 0; }
+  p { font: 300 30px/1.85 Jost, sans-serif; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(239,233,226,0.9); text-align: center; }
+  .when { font: 400 36px/1.7 Jost, sans-serif; letter-spacing: 0.22em; color: #c9793f; text-transform: uppercase; text-align: center; }
+  .spacer { flex: 1; }
+  .qr { background: #fff; padding: 22px; border-radius: 6px; }
+  .qr img { display: block; width: 260px; height: 260px; }
+  .cta { font: 400 24px/1.6 Jost, sans-serif; letter-spacing: 0.3em; text-transform: uppercase; color: rgba(239,233,226,0.65); margin-top: 30px; text-align: center; }
+</style>
+</head>
+<body>
+<div id="card">
+  <canvas id="pearls" width="1240" height="1748"></canvas>
+  <div class="frame"></div>
+  <div class="content">
+    <h1>Caviar</h1>
+    <div class="rule"></div>
+    <p>An evening of caviar,<br />champagne and<br />exceptional company.</p>
+    <div class="rule"></div>
+    <div class="when">11 December 2026 · 18:00<br />Ringön · Göteborg</div>
+    <div class="spacer"></div>
+    <div class="qr"><img src="../assets/qr.png" /></div>
+    <div class="cta">Scan to open<br />the invitation</div>
+  </div>
+</div>
+<script>
+/* A procedural bed of caviar. Feature-rich on purpose: image tracking needs
+   high-contrast detail, which a flat black card does not provide. */
+const c = document.getElementById("pearls");
+const x = c.getContext("2d");
+const W = c.width, H = c.height;
+
+x.fillStyle = "#070605";
+x.fillRect(0, 0, W, H);
+
+// Pearls occupy the lower half, like the photograph on the real cover.
+const rows = 46;
+for (let row = 0; row < rows; row++) {
+  const t = row / rows;
+  const y = H * 0.48 + t * H * 0.54;
+  const r = 20 + t * 26;
+  const perRow = Math.ceil(W / (r * 1.35));
+  for (let i = -1; i <= perRow; i++) {
+    const jitter = (Math.sin(row * 12.9898 + i * 78.233) * 43758.5453) % 1;
+    const cx = i * r * 1.35 + (row % 2) * r * 0.68 + jitter * r * 0.5;
+    const cy = y + jitter * r * 0.4;
+    const rr = r * (0.42 + Math.abs(jitter) * 0.14);
+
+    const g = x.createRadialGradient(cx - rr * 0.35, cy - rr * 0.4, rr * 0.05, cx, cy, rr);
+    g.addColorStop(0, "rgba(232,190,142,0.95)");
+    g.addColorStop(0.18, "rgba(120,84,54,0.9)");
+    g.addColorStop(0.6, "rgba(28,20,14,1)");
+    g.addColorStop(1, "rgba(6,5,4,1)");
+    x.fillStyle = g;
+    x.beginPath();
+    x.arc(cx, cy, rr, 0, Math.PI * 2);
+    x.fill();
+  }
+}
+
+// Fade the pearls into the black field behind the type.
+const fade = x.createLinearGradient(0, H * 0.4, 0, H * 0.72);
+fade.addColorStop(0, "rgba(7,6,5,1)");
+fade.addColorStop(1, "rgba(7,6,5,0)");
+x.fillStyle = fade;
+x.fillRect(0, H * 0.38, W, H * 0.36);
+</script>
+</body>
+</html>

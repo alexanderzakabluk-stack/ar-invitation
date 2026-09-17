@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8" /><title>Compile MindAR target</title>
+<style>body{font:14px monospace;background:#111;color:#0f0;padding:30px}</style>
+</head>
+<body>
+<pre id="log">idle</pre>
+<script type="module">
+import { Compiler } from "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js";
+
+const log = (m) => { document.getElementById("log").textContent = m; console.log(m); };
+
+window.__result = null;
+window.__error = null;
+
+(async () => {
+  try {
+    log("loading image…");
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.crossOrigin = "anonymous";
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error("image failed to load"));
+      i.src = "/assets/target.png";
+    });
+    log(`image ${img.width}x${img.height} — compiling…`);
+
+    const compiler = new Compiler();
+    await compiler.compileImageTargets([img], (p) => log(`compiling… ${p.toFixed(1)}%`));
+
+    const buffer = await compiler.exportData();
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    window.__result = btoa(binary);
+    log(`done — ${bytes.length} bytes`);
+  } catch (e) {
+    window.__error = String(e && e.message ? e.message : e);
+    log("ERROR: " + window.__error);
+  }
+})();
+</script>
+</body>
+</html>

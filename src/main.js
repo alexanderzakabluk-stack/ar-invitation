@@ -1,90 +1,121 @@
 import * as THREE from "three";
 import { createExperience } from "./scene.js";
+import { startImageTracking } from "./ar-image.js";
 import * as ui from "./ui.js";
 import {
   isIOS,
   isInAppBrowser,
   hasCameraApi,
   isSecure,
-  supportsWebXR,
   requestMotionPermission,
+  ensureCamera,
 } from "./env.js";
 
-/* ------------------------------------------------------------------ */
-/* renderer                                                            */
-/* ------------------------------------------------------------------ */
+const TARGET_SRC = "./assets/targets.mind";
+
+/** How long to look for the card before offering the table instead. */
+const SCAN_PATIENCE_MS = 15000;
 
 const canvas = document.getElementById("gl");
 const video = document.getElementById("camera-feed");
-
-const renderer = new THREE.WebGLRenderer({
-  canvas,
-  alpha: true,
-  antialias: true,
-  powerPreference: "high-performance",
-});
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.15;
-
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.01, 40);
-
-const experience = createExperience(renderer);
-scene.add(experience.root);
-
-/* Reticle used in the WebXR path to show where the tin will land. */
-const reticle = new THREE.Mesh(
-  new THREE.RingGeometry(0.055, 0.062, 48).rotateX(-Math.PI / 2),
-  new THREE.MeshBasicMaterial({ color: 0xc9793f, transparent: true, opacity: 0.9 })
-);
-reticle.matrixAutoUpdate = false;
-reticle.visible = false;
-scene.add(reticle);
+const mindarContainer = document.getElementById("mindar");
 
 const chime = ui.createChime();
 const clock = new THREE.Clock();
 
-let mode = null; // "webxr" | "passthrough"
+let session = null; // the running AR path, whichever it is
+let experience = null;
 let placed = false;
-let stream = null;
+let scanTimer = null;
 
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+/* ------------------------------------------------------------------ */
+/* shared                                                              */
+/* ------------------------------------------------------------------ */
+
+function makeRenderer() {
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    alpha: true,
+    antialias: true,
+    powerPreference: "high-performance",
+  });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
-});
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.15;
+  return renderer;
+}
+
+function startReveal() {
+  if (placed) return;
+  placed = true;
+  clearTimeout(scanTimer);
+  ui.show("scene");
+  chime.play(0.1);
+  chime.play(2.4, [660, 990]);
+  experience.play(() => {
+    ui.setChip(true);
+    chime.play(0, [523, 784, 1046]);
+  });
+}
 
 /* ------------------------------------------------------------------ */
-/* gyro camera (passthrough path)                                      */
+/* primary path — the card is the anchor                               */
 /* ------------------------------------------------------------------ */
 
-const gyro = {
-  enabled: false,
-  alpha: 0,
-  beta: 0,
-  gamma: 0,
-  screen: 0,
-};
+async function startCardTracking() {
+  ui.text("prepare-text", "Asking for the camera…");
+  ui.show("prepare");
+  await ensureCamera();
 
+  ui.text("prepare-text", "Looking for the card…");
+  session = await startImageTracking({
+    container: mindarContainer,
+    targetSrc: TARGET_SRC,
+    buildExperience: (renderer) => {
+      experience = createExperience(renderer);
+      return experience;
+    },
+    onFound: startReveal,
+  });
+
+  mindarContainer.classList.add("is-live");
+  ui.text("place-text", "Point at the invitation card");
+  ui.show("scan");
+
+  // Guests looking at a screenshot of the card, or who left the card at home,
+  // should not be stuck staring at a viewfinder.
+  scanTimer = setTimeout(() => {
+    if (!placed) document.querySelector('[data-action="no-card"]').hidden = false;
+  }, SCAN_PATIENCE_MS);
+}
+
+/* ------------------------------------------------------------------ */
+/* fallback path — no card, place it on a table                        */
+/* ------------------------------------------------------------------ */
+
+const gyro = { enabled: false, alpha: 0, beta: 0, gamma: 0, screen: 0 };
 const zee = new THREE.Vector3(0, 0, 1);
 const euler = new THREE.Euler();
 const q0 = new THREE.Quaternion();
-const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° about X
+const q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5));
+
+let fallbackCamera = null;
 
 function applyGyro() {
-  if (!gyro.enabled) return;
-  const alpha = THREE.MathUtils.degToRad(gyro.alpha);
-  const beta = THREE.MathUtils.degToRad(gyro.beta);
-  const gamma = THREE.MathUtils.degToRad(gyro.gamma);
-  const orient = THREE.MathUtils.degToRad(gyro.screen);
-
-  euler.set(beta, alpha, -gamma, "YXZ");
-  camera.quaternion.setFromEuler(euler);
-  camera.quaternion.multiply(q1);
-  camera.quaternion.multiply(q0.setFromAxisAngle(zee, -orient));
+  if (!gyro.enabled || !fallbackCamera) return;
+  euler.set(
+    THREE.MathUtils.degToRad(gyro.beta),
+    THREE.MathUtils.degToRad(gyro.alpha),
+    -THREE.MathUtils.degToRad(gyro.gamma),
+    "YXZ"
+  );
+  fallbackCamera.quaternion.setFromEuler(euler);
+  fallbackCamera.quaternion.multiply(q1);
+  fallbackCamera.quaternion.multiply(
+    q0.setFromAxisAngle(zee, -THREE.MathUtils.degToRad(gyro.screen))
+  );
 }
 
 function onOrientation(event) {
@@ -96,164 +127,87 @@ function onOrientation(event) {
   gyro.enabled = true;
 }
 
-/* ------------------------------------------------------------------ */
-/* placement                                                           */
-/* ------------------------------------------------------------------ */
+async function startTablePlacement() {
+  await session?.stop();
+  session = null;
+  mindarContainer.classList.remove("is-live");
 
-function placeInFront() {
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
-  forward.y = 0;
-  if (forward.lengthSq() < 1e-4) forward.set(0, 0, -1);
-  forward.normalize();
-
-  experience.root.position
-    .copy(camera.position)
-    .addScaledVector(forward, 0.62)
-    .setY(camera.position.y - 0.3);
-
-  experience.root.rotation.y = Math.atan2(forward.x, forward.z);
-}
-
-function startReveal() {
-  placed = true;
-  reticle.visible = false;
-  ui.show("scene");
-  chime.play(0.1);
-  chime.play(2.4, [660, 990]);
-  experience.play(() => {
-    ui.setChip(true);
-    chime.play(0, [523, 784, 1046]);
-  });
-}
-
-/* ------------------------------------------------------------------ */
-/* WebXR path (Android / Chrome)                                       */
-/* ------------------------------------------------------------------ */
-
-let hitTestSource = null;
-let xrSession = null;
-
-async function startWebXR() {
-  ui.text("prepare-text", "Starting AR…");
+  ui.text("prepare-text", "Switching to table mode…");
   ui.show("prepare");
 
-  xrSession = await navigator.xr.requestSession("immersive-ar", {
-    requiredFeatures: ["hit-test", "local"],
-    optionalFeatures: ["dom-overlay", "light-estimation"],
-    domOverlay: { root: document.body },
-  });
-
-  mode = "webxr";
-  renderer.xr.enabled = true;
-  await renderer.xr.setSession(xrSession);
-  canvas.classList.add("is-live");
-
-  const viewerSpace = await xrSession.requestReferenceSpace("viewer");
-  hitTestSource = await xrSession.requestHitTestSource({ space: viewerSpace });
-
-  ui.text("place-text", "Move the phone slowly, then tap the surface");
-  ui.show("place");
-
-  xrSession.addEventListener("select", () => {
-    if (!placed && reticle.visible) {
-      experience.root.position.setFromMatrixPosition(reticle.matrix);
-      experience.root.rotation.y = 0;
-      startReveal();
-    }
-  });
-
-  xrSession.addEventListener("end", () => {
-    hitTestSource = null;
-    xrSession = null;
-    canvas.classList.remove("is-live");
-    ui.setChip(false);
-    ui.show("details");
-  });
-
-  renderer.setAnimationLoop(renderXR);
-}
-
-function renderXR(_, frame) {
-  const delta = Math.min(clock.getDelta(), 0.05);
-
-  if (frame && hitTestSource && !placed) {
-    const refSpace = renderer.xr.getReferenceSpace();
-    const hits = frame.getHitTestResults(hitTestSource);
-    if (hits.length) {
-      const pose = hits[0].getPose(refSpace);
-      reticle.visible = true;
-      reticle.matrix.fromArray(pose.transform.matrix);
-    } else {
-      reticle.visible = false;
-    }
-  }
-
-  experience.update(delta, renderer.xr.getCamera());
-  renderer.render(scene, camera);
-}
-
-/* ------------------------------------------------------------------ */
-/* Passthrough path (iOS, and anything without WebXR)                  */
-/* ------------------------------------------------------------------ */
-
-async function startPassthrough() {
-  ui.text("prepare-text", "Asking for the camera…");
-  ui.show("prepare");
-
-  stream = await navigator.mediaDevices.getUserMedia({
-    video: {
-      facingMode: { ideal: "environment" },
-      width: { ideal: 1920 },
-      height: { ideal: 1080 },
-    },
+  const stream = await navigator.mediaDevices.getUserMedia({
+    video: { facingMode: { ideal: "environment" }, width: { ideal: 1920 } },
     audio: false,
   });
-
   video.srcObject = stream;
   await video.play();
   video.classList.add("is-live");
   canvas.classList.add("is-live");
 
-  mode = "passthrough";
+  const renderer = makeRenderer();
+  const scene = new THREE.Scene();
+  fallbackCamera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.01, 40);
+  experience = createExperience(renderer);
+  scene.add(experience.root);
 
-  const motionOk = await requestMotionPermission();
-  if (motionOk) {
+  if (await requestMotionPermission()) {
     window.addEventListener("deviceorientation", onOrientation, true);
   }
 
-  ui.text(
-    "place-text",
-    motionOk
-      ? "Put the card on a table, aim at it, then tap"
-      : "Aim at a table, then tap to place"
-  );
-  ui.show("place");
+  renderer.setAnimationLoop(() => {
+    applyGyro();
+    experience.update(Math.min(clock.getDelta(), 0.05), fallbackCamera);
+    renderer.render(scene, fallbackCamera);
+  });
 
-  renderer.setAnimationLoop(renderPassthrough);
+  session = {
+    experience,
+    async stop() {
+      renderer.setAnimationLoop(null);
+      stream.getTracks().forEach((t) => t.stop());
+      video.classList.remove("is-live");
+      canvas.classList.remove("is-live");
+    },
+  };
+
+  document.querySelector('[data-action="place"]').hidden = false;
+  document.querySelector('[data-action="no-card"]').hidden = true;
+  ui.text("place-text", "Aim at a table, then tap to place");
+  ui.show("scan");
 }
 
-function renderPassthrough() {
-  const delta = Math.min(clock.getDelta(), 0.05);
-  applyGyro();
-  experience.update(delta, camera);
-  renderer.render(scene, camera);
+function placeOnTable() {
+  if (placed || !fallbackCamera) return;
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(fallbackCamera.quaternion);
+  forward.y = 0;
+  if (forward.lengthSq() < 1e-4) forward.set(0, 0, -1);
+  forward.normalize();
+
+  experience.root.position
+    .copy(fallbackCamera.position)
+    .addScaledVector(forward, 0.62)
+    .setY(fallbackCamera.position.y - 0.3);
+  experience.root.rotation.y = Math.atan2(forward.x, forward.z);
+
+  startReveal();
 }
 
 /* ------------------------------------------------------------------ */
-/* Preview path (?preview) — no camera, for desktop iteration on the 3D */
+/* preview — no camera, for desktop iteration on the 3D                */
 /* ------------------------------------------------------------------ */
 
 function startPreview() {
-  mode = "preview";
-  canvas.classList.add("is-live");
-  camera.position.set(0, 0.28, 0.8);
-  camera.lookAt(0, 0.16, 0);
-  experience.root.position.set(0, 0, 0);
+  const renderer = makeRenderer();
+  const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0908);
+  const cam = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.01, 40);
+  experience = createExperience(renderer);
+  scene.add(experience.root);
+  canvas.classList.add("is-live");
+  canvas.style.pointerEvents = "auto";
 
   let drag = null;
   let orbit = 0;
-  canvas.style.pointerEvents = "auto";
   canvas.addEventListener("pointerdown", (e) => (drag = e.clientX));
   canvas.addEventListener("pointerup", () => (drag = null));
   canvas.addEventListener("pointermove", (e) => {
@@ -265,12 +219,10 @@ function startPreview() {
   startReveal();
 
   renderer.setAnimationLoop(() => {
-    const delta = Math.min(clock.getDelta(), 0.05);
-    const r = 0.8;
-    camera.position.set(Math.sin(orbit) * r, 0.28, Math.cos(orbit) * r);
-    camera.lookAt(0, 0.16, 0);
-    experience.update(delta, camera);
-    renderer.render(scene, camera);
+    cam.position.set(Math.sin(orbit) * 0.8, 0.28, Math.cos(orbit) * 0.8);
+    cam.lookAt(0, 0.16, 0);
+    experience.update(Math.min(clock.getDelta(), 0.05), cam);
+    renderer.render(scene, cam);
   });
 }
 
@@ -281,31 +233,18 @@ function startPreview() {
 async function begin() {
   chime.unlock();
 
-  if (new URLSearchParams(location.search).has("preview")) {
-    startPreview();
-    return;
-  }
+  if (new URLSearchParams(location.search).has("preview")) return startPreview();
 
   if (isInAppBrowser) {
-    ui.fail(
+    return ui.fail(
       "This link is open inside an app browser, which blocks the camera. Tap the ⋯ menu and choose “Open in browser”."
     );
-    return;
   }
-
-  if (!isSecure) {
-    ui.fail("The camera needs a secure (https) connection.");
-    return;
-  }
+  if (!isSecure) return ui.fail("The camera needs a secure (https) connection.");
+  if (!hasCameraApi) return ui.fail("This browser cannot open the camera.");
 
   try {
-    if (await supportsWebXR()) {
-      await startWebXR();
-    } else if (hasCameraApi) {
-      await startPassthrough();
-    } else {
-      ui.fail("This browser cannot open the camera.");
-    }
+    await startCardTracking();
   } catch (error) {
     console.error(error);
     const denied = error?.name === "NotAllowedError" || error?.name === "SecurityError";
@@ -317,38 +256,30 @@ async function begin() {
   }
 }
 
-function tryPlace() {
-  if (placed || mode !== "passthrough") return;
-  placeInFront();
-  startReveal();
-}
-
-function teardown() {
-  renderer.setAnimationLoop(null);
-  experience.stop();
+async function teardown() {
+  clearTimeout(scanTimer);
+  await session?.stop();
+  session = null;
+  experience?.stop();
   placed = false;
   ui.setChip(false);
-  video.classList.remove("is-live");
-  canvas.classList.remove("is-live");
-  stream?.getTracks().forEach((track) => track.stop());
-  stream = null;
-  if (xrSession) xrSession.end().catch(() => {});
+  mindarContainer.classList.remove("is-live");
 }
 
 ui.on("start", begin);
-ui.on("place", tryPlace);
-ui.on("retry", () => {
-  ui.show("cover");
-});
-ui.on("skip", () => {
-  teardown();
+ui.on("place", placeOnTable);
+ui.on("no-card", () => startTablePlacement().catch(console.error));
+ui.on("retry", () => ui.show("cover"));
+ui.on("skip", async () => {
+  await teardown();
   ui.show("details");
 });
-ui.on("finish", () => {
-  teardown();
+ui.on("finish", async () => {
+  await teardown();
   ui.show("details");
 });
-ui.on("replay", () => {
+ui.on("replay", async () => {
+  await teardown();
   ui.show("cover");
 });
 ui.on("calendar", (event) => {
@@ -359,15 +290,13 @@ ui.on("calendar", (event) => {
   link.click();
 });
 
-/* In the passthrough path, tapping anywhere on the coaching screen places the
-   scene — the button is there for people who do not try tapping the view. */
-document.querySelector('[data-screen="place"]').addEventListener("click", tryPlace);
+document.querySelector('[data-screen="scan"]').addEventListener("click", placeOnTable);
 
-if (isIOS) {
-  ui.text("cover-hint", "Best on iPhone in Safari or Chrome · camera required");
-}
+window.addEventListener("resize", () => {
+  if (fallbackCamera) {
+    fallbackCamera.aspect = window.innerWidth / window.innerHeight;
+    fallbackCamera.updateProjectionMatrix();
+  }
+});
 
-/* Keep something on screen while the fonts that the card texture uses load. */
-if (document.fonts?.ready) {
-  document.fonts.ready.catch(() => {});
-}
+if (isIOS) ui.text("cover-hint", "Works in Safari and Chrome · camera required");

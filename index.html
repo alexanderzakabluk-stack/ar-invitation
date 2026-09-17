@@ -14,12 +14,16 @@
 <script type="importmap">
 {
   "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js"
+    "three": "./src/three-compat.js",
+    "three-core": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/",
+    "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"
   }
 }
 </script>
 </head>
 <body>
+  <div id="mindar"></div>
   <video id="camera-feed" playsinline muted autoplay></video>
   <canvas id="gl"></canvas>
 
@@ -43,11 +47,12 @@
     </section>
 
     <!-- 3. Placement coaching -->
-    <section class="screen is-passthrough" data-screen="place">
+    <section class="screen is-passthrough" data-screen="scan">
       <div class="coach">
-        <div class="coach-icon"></div>
-        <p class="coach-text" data-role="place-text">Point at a table or the printed card</p>
-        <button class="btn btn-ghost" data-action="place">Place here</button>
+        <div class="coach-frame"></div>
+        <p class="coach-text" data-role="place-text">Point at the invitation card</p>
+        <button class="btn btn-ghost" data-action="place" hidden>Place here</button>
+        <button class="link" data-action="no-card" hidden>No card with you? Place it on a table</button>
       </div>
     </section>
 
